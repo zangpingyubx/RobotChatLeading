@@ -1,0 +1,10 @@
+# Python 依赖
+fastapi
+uvicorn
+httpx
+python-multipart
+streamlit
+ollama
+openai
+python-dotenv
+requests
