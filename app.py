@@ -33,13 +33,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ========== 侧边栏 ==========
-"""在页面左边画一个侧边栏
-画一个单选按钮，默认选中 "本地 Ollama"（index=0）
-用户的选择会存到变量 backend_type 里"""
+# 在页面左边画一个侧边栏
+# 画一个单选按钮，默认选中 "本地 Ollama"（index=0）
+# 用户的选择会存到变量 backend_type 里
 with st.sidebar:
 
     st.title("⚙️ 模型设置")
-
+    # 🆕 enable_tools是否开启工具调用，先给默认值，保证变量一定存在
+    enable_tools = False
     backend_type = st.radio(
         "选择模型来源",
         ["本地 Ollama", "云端 DeepSeek"],
@@ -47,11 +48,9 @@ with st.sidebar:
     )
 
 
-    """
-    如果用户选"本地"，显示本地模型下拉菜单（llama3.2:3b 等）
-    如果用户选"云端"，显示 DeepSeek 模型下拉菜单
-    如果 .env 里没配置密钥，显示警告
-    """
+    # 如果用户选"本地"，显示本地模型下拉菜单（llama3.2:3b 等）
+    # 如果用户选"云端"，显示 DeepSeek 模型下拉菜单
+    # 如果 .env 里没配置密钥，显示警告
     if backend_type == "本地 Ollama":
         model_name = st.selectbox("本地模型", ["llama3.2:3b", "qwen2.5:7b", "mistral", "gemma2:9b"])
         #提示
@@ -62,9 +61,9 @@ with st.sidebar:
         if not os.getenv("DEEPSEEK_API_KEY"):
             st.warning("⚠️ 未检测到 DEEPSEEK_API_KEY，请在 .env 文件中配置")
 
-    """画一条分割线
-    画一个下拉菜单，让用户选择提示词策略（默认 zero_shot）
-    这个策略会传给后端，决定模型怎么回答"""
+    # 画一条分割线
+    # 画一个下拉菜单，让用户选择提示词策略（默认 zero_shot）
+    # 这个策略会传给后端，决定模型怎么回答
     st.divider()
     # ========== 多选策略 ==========
     st.subheader("🧠 提示词策略（可多选）")
@@ -97,7 +96,25 @@ with st.sidebar:
             "任务描述（CoT 场景用）",
             placeholder="例如：请帮助用户解决编程问题"
         )
-    # 画一个按钮，点击后清空聊天记录，并刷新页面
+
+    # ========== 🆕 工具调用开关 ==========
+    st.divider()
+    st.subheader("🔧 工具调用")
+
+    if backend_type == "云端 DeepSeek":
+        enable_tools = st.toggle(
+            "启用 Function Calling",
+            value=False,
+            help="开启后，AI 可自主调用本地工具（查时间 / 计算器 / 查天气）"
+        )
+        if enable_tools:
+            st.caption("✅ 已启用：AI 可以调用 get_current_time、calculate、get_weather")
+        else:
+            st.caption("⬜ 未启用：AI 只进行普通对话")
+    else:
+        st.caption("ℹ️ 工具调用暂只支持云端 DeepSeek")
+
+    # ========== 清空历史 ==========
     if st.button("🗑️ 清空对话历史"):
         st.session_state.messages = []
         st.rerun()
@@ -107,7 +124,7 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 # ========== 主界面 ==========
-tab1, tab2 = st.tabs(["💬 对话", "🖼️ 图像理解"])
+tab1, tab2 = st.tabs(["💬 对话", "暂无"])
 
 # ---------- 标签1：对话 ----------
 with tab1:
@@ -150,14 +167,10 @@ with tab1:
                     "stream": True,#是否流式输出
                     "strategies": strategies,  # 放这里
                     "few_shot": few_shot_category or "",
-                    "task": task_description or ""
+                    "task": task_description or "",
+                    "enable_tools": enable_tools,
                 }
 
-                params = {
-                    "strategies": strategies,#提示词策略，这里是复数，传列表
-                    "few_shot": few_shot_category or "",#Few-shot 场景（如果有）
-                    "task": task_description or ""#CoT 任务描述（如果有）
-                }
 
                 #前端通过 HTTP 协议，向后端 http://localhost:8000/chat/stream 发送 POST 请求
                 # 请求体是 JSON 格式（payload）
@@ -191,78 +204,78 @@ with tab1:
             except Exception as e:
                 st.error(f"调用出错: {e}")
 
-# ---------- 标签2：图像理解 ----------
-with tab2:
-    st.title("🖼️ DeepSeek 图像理解")
-    st.caption("使用 DeepSeek Vision 模型分析图片内容（仅云端）")
-
-    if not os.getenv("DEEPSEEK_API_KEY"):
-        st.error("❌ 请先配置 DEEPSEEK_API_KEY 才能使用图像理解功能")
-        st.stop()
-
-    input_type = st.radio("选择图片来源", ["图片 URL", "上传本地图片"])
-
-    image_url = None
-    uploaded_file = None
-
-    if input_type == "图片 URL":
-        image_url = st.text_input(
-            "输入图片 URL",
-            "https://pic.rmb.bdstatic.com/8859ebddde6c7d462218176a81135c9a.jpg@h_1280"
-        )
-    else:
-        uploaded_file = st.file_uploader("上传图片", type=["jpg", "jpeg", "png"])
-
-    if image_url:
-        st.image(image_url, caption="预览图片", width=300)
-    elif uploaded_file:
-        st.image(uploaded_file, caption="预览图片", width=300)
-
-    question = st.text_input("你想问什么？", value="描述一下这张图片的内容")
-
-    if st.button("开始分析"):
-        if not image_url and not uploaded_file:
-            st.warning("请提供图片")
-            st.stop()
-
-        # 处理图片 URL
-        final_image_url = image_url
-        if uploaded_file:
-            import base64
-            bytes_data = uploaded_file.getvalue()
-            base64_image = base64.b64encode(bytes_data).decode()
-            mime_type = uploaded_file.type
-            final_image_url = f"data:{mime_type};base64,{base64_image}"
-
-        # 调用后端的 /vision/analyze 接口
-        with st.chat_message("assistant"):
-            placeholder = st.empty()
-            full_response = ""
-            try:
-                payload = {
-                    "image_url": final_image_url,
-                    "question": question,
-                    "model": "deepseek-v4-flash-vision-exp"
-                }
-                response = requests.post(
-                    f"{API_BASE_URL}/vision/analyze",
-                    json=payload,
-                    stream=True,
-                    timeout=60
-                )
-
-                if response.status_code != 200:
-                    st.error(f"后端返回错误: {response.status_code} - {response.text}")
-                    st.stop()
-
-                for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
-                    if chunk:
-                        full_response += chunk
-                        placeholder.markdown(full_response + "▌")
-
-                placeholder.markdown(full_response)
-
-            except requests.exceptions.ConnectionError:
-                st.error("❌ 无法连接到后端服务，请确认 FastAPI 已启动")
-            except Exception as e:
-                st.error(f"图像分析失败: {e}")
+# # ---------- 标签2：图像理解 ----------
+# with tab2:
+#     st.title("🖼️ DeepSeek 图像理解")
+#     st.caption("使用 DeepSeek Vision 模型分析图片内容（仅云端）")
+#
+#     if not os.getenv("DEEPSEEK_API_KEY"):
+#         st.error("❌ 请先配置 DEEPSEEK_API_KEY 才能使用图像理解功能")
+#         st.stop()
+#
+#     input_type = st.radio("选择图片来源", ["图片 URL", "上传本地图片"])
+#
+#     image_url = None
+#     uploaded_file = None
+#
+#     if input_type == "图片 URL":
+#         image_url = st.text_input(
+#             "输入图片 URL",
+#             "https://pic.rmb.bdstatic.com/8859ebddde6c7d462218176a81135c9a.jpg@h_1280"
+#         )
+#     else:
+#         uploaded_file = st.file_uploader("上传图片", type=["jpg", "jpeg", "png"])
+#
+#     if image_url:
+#         st.image(image_url, caption="预览图片", width=300)
+#     elif uploaded_file:
+#         st.image(uploaded_file, caption="预览图片", width=300)
+#
+#     question = st.text_input("你想问什么？", value="描述一下这张图片的内容")
+#
+#     if st.button("开始分析"):
+#         if not image_url and not uploaded_file:
+#             st.warning("请提供图片")
+#             st.stop()
+#
+#         # 处理图片 URL
+#         final_image_url = image_url
+#         if uploaded_file:
+#             import base64
+#             bytes_data = uploaded_file.getvalue()
+#             base64_image = base64.b64encode(bytes_data).decode()
+#             mime_type = uploaded_file.type
+#             final_image_url = f"data:{mime_type};base64,{base64_image}"
+#
+#         # 调用后端的 /vision/analyze 接口
+#         with st.chat_message("assistant"):
+#             placeholder = st.empty()
+#             full_response = ""
+#             try:
+#                 payload = {
+#                     "image_url": final_image_url,
+#                     "question": question,
+#                     "model": "deepseek-v4-flash-vision-exp"
+#                 }
+#                 response = requests.post(
+#                     f"{API_BASE_URL}/vision/analyze",
+#                     json=payload,
+#                     stream=True,
+#                     timeout=60
+#                 )
+#
+#                 if response.status_code != 200:
+#                     st.error(f"后端返回错误: {response.status_code} - {response.text}")
+#                     st.stop()
+#
+#                 for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+#                     if chunk:
+#                         full_response += chunk
+#                         placeholder.markdown(full_response + "▌")
+#
+#                 placeholder.markdown(full_response)
+#
+#             except requests.exceptions.ConnectionError:
+#                 st.error("❌ 无法连接到后端服务，请确认 FastAPI 已启动")
+#             except Exception as e:
+#                 st.error(f"图像分析失败: {e}")
